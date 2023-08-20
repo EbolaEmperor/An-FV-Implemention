@@ -150,7 +150,7 @@ ColVector FV_MOL_Solver::XE(const ColVector &phi, const double &t){
     if(noForcingTerm) return res;
     for(int i = 0; i < M; i++)
         for(int j = 0; j < M; j++)
-            res(idx(i,j)) += f->int2D(i*dH, (i+1)*dH, j*dH, (j+1)*dH, t)*M*M;
+            res(idx(i,j)) += f->int2D_order6(i*dH, (i+1)*dH, j*dH, (j+1)*dH, t)*M*M;
     return res;
 }
 
