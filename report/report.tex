@@ -1,0 +1,211 @@
+\documentclass[lang=cn,10pt]{elegantbook}
+
+\title{Project: 四阶有限体积方法}
+
+\author{Wenchong Huang}
+\date{Aug 20, 2023}
+
+\setcounter{tocdepth}{3}
+
+\logo{logo-blue.jpg}
+\cover{cover.jpeg}
+\usepackage{multirow}
+\usepackage{xpatch}
+\makeatletter
+\xpatchcmd{\chapter}
+  {\if@openright\cleardoublepage\else\clearpage\fi}{\par\relax}
+  {}{}
+\makeatother
+
+% 本文档命令
+\usepackage{array, float}
+\newcommand{\ccr}[1]{\makecell{{\color{#1}\rule{1cm}{1cm}}}}
+
+% 修改标题页的橙色带
+% \definecolor{customcolor}{RGB}{32,178,170}
+% \colorlet{coverlinecolor}{customcolor}
+
+\begin{document}
+
+\maketitle
+\frontmatter
+
+\tableofcontents
+
+\mainmatter
+
+\chapter{用户手册}
+
+\section{编译与测试说明}
+
+请在项目根目录下执行以下命令完成编译：
+\begin{lstlisting}
+  make
+\end{lstlisting}
+
+\subsection{测试用例一、二}
+
+对于第一个测试用例，请使用以下命令运行测试：
+\begin{lstlisting}
+  time ./test1 M
+\end{lstlisting}
+
+其中\verb|M|表示将区域划分为$M\times M$的网格。程序将会输出误差、求解时间，并将求解结果输出到\verb|result.txt|。在matlab中编写如下脚本即可绘制图像。
+\begin{lstlisting}
+  [x,y]=meshgrid(0:1/M:(1-1/M),0:1/M:(1-1/M));
+  z = load("result.txt")';
+  pcolor(x,y,z)
+  shading interp;
+\end{lstlisting}
+
+对于第二个测试用例，运行与绘图方法与第一个测试用例完全相同，将\verb|test1|改为\verb|test2|即可。
+
+\subsection{测试用例三}
+
+\subsection{对流扩散方程求解器接口}
+
+\subsection{INSE求解器接口}
+
+\newpage
+
+\chapter{数值积分}
+
+\section{辛普森法则}
+
+\section{6阶Newton-Cote法则}
+
+\section{自适应积分}
+
+\chapter{代数多重网格}
+
+为节省工作量，本文所有求解器的解方程部分均采用代数多重网格。经测试，选取恰当的强依赖阈值，可以使代数多重网格的性能与几何多重网格相当，甚至超越几何多重网格\footnote{这项比较基于我的结果（代数多重网格）、樊睿的结果（几何多重网格）、凌子恒的结果（几何多重网格）。}。本章的内容来源于我在微分方程数值解课程中的多重网格大作业。
+
+\section{算法描述}
+
+\subsection{背景与介绍}
+
+代数多重网格（AMG）是几何多重网格的一个自然推广，当我们发现由偏微分方程引出的离散方程组，使用多重网格具有如此优秀的表现时，自然会想，能不能将其推广到更一般的方程组，解更一般的大型稀疏矩阵。
+
+答案是肯定的，这就是代数多重网格。具体而言，代数多重网格对$M$矩阵具有较好的表现，$M$矩阵是满足正定对称、对角元为正数、非对角元非正的矩阵。事实上，大部分椭圆方程的离散矩阵都是$M$矩阵。
+
+对一个$n\times n$的矩阵$A^h$，我们不妨将$1,...,n$看作点，将$A^h$看作一个邻接矩阵，这样我们就得到了一个稀疏图，于是就有了网格结构。
+
+要想应用多重网格的思路，我们必须将方程限制到粗网格中，求解后返回细网格调整。但此时我们面临着严峻的问题：我们不知道网格的结构，只知道一个矩阵。我们需要一些算法来选取粗网格点$\Omega^{2h}$，并且定义限制算子$I_{h}^{2h}$与插值算子$I_{2h}^{h}$，还要给出粗网格上的矩阵$A^{2h}$。
+
+\subsection{选取粗网格点}
+
+要想从中选取粗网格点，首先给出如下定义：
+
+\begin{definition}
+  若$i,j$满足：
+  \begin{equation}
+    |a_{i,j}|\geq \theta\max_{k\neq i}|a_{i,k}|
+  \end{equation}
+
+  则称$i$强依赖于$j$，也称$j$强影响$i$. 其中$\theta$是一个事先给定的阈值，称为“强依赖阈值”.
+
+  记$N_i$为所有使$a_{i,j}\neq 0$的点$j$构成的集合，称为“相邻点”集。记$S_i$为所有强影响$i$的点构成的集合，$S_i^T$为所有强依赖于$i$的点构成的集合。
+\end{definition}
+
+在下文中，我们记粗网格$\Omega^{2h}=C$，细网格$\Omega^h=C\cup F$，即$F$表示所有在细网格但不在粗网格中的点。我们还记$C_i=S_i\cap C,\;D_i^s=S_i\cap F,\;D_i^w=N_i\setminus S_i$.
+
+我们希望用一种\textbf{启发式的方法}来选取粗网格点，具体地，我们希望：
+\begin{enumerate}[(1)]
+  \item $\forall i\in F$，对于$j\in S_i$，或$j\in C_i$，或$j$强依赖于$C_i$中某点;
+  \item $C$中的点尽可能多，但需要保持：$\forall i\in C$，没有$j\in C$使得$i$强依赖于$j$。
+\end{enumerate}
+
+当然，我们只是希望上述性质尽可能得到满足，为此，William L. Briggs的书上给出了\textbf{“染色算法”}，如下：
+\begin{enumerate}[1]
+  \item $C,F\gets \varnothing$, $\lambda_i\gets |S_i^T|$.
+  \item 选取$i\in\Omega^h\setminus(C\cup F)$，使$\lambda_i$最大.
+  \item $C\gets C\cup\{i\}$, $F\gets F\cup (S_i^T\setminus C)$.
+  \item $\forall j\in S_i^T,\;\forall k\in S_j\setminus(C\cup F)$, 令$\lambda_k\gets \lambda_k+1$.
+  \item 若$C\cup F=\Omega^h$，结束，否则返回第2步.
+\end{enumerate}
+
+注意到上述过程需要维护一个$\lambda_i$数组，支持增加、删除、求最大下标三种操作，我们期望单次操作的复杂度不超过$O(\log n)$，因此我们实现了一个\textbf{二叉搜索树}。当然，使用线段树、平衡树也是可以的，不过因为可以提前建树，所以平衡操作是不必要的。
+
+\subsection{构建插值算子}
+
+对于$\mathbf{e}\in\Omega^{2h}$，插值算子具有如下格式：
+\begin{equation}
+  (I_{2h}^h \mathbf{e})_i=\left\{
+    \begin{array}{ll}
+      e_i & \text{若 }i\in C,\\
+      \sum_{j\in C_i}\omega_{ij}e_j & \text{若 }i\in F.
+    \end{array}
+  \right.
+\end{equation}
+
+在粗网格中，我们求解的方程是$A^{2h}\mathbf{e}=\mathbf{f}$，其中$\mathbf{f}$是光滑化（即若干次G-S迭代）后的残差，通常比较小，因此
+\begin{equation*}
+  a_{ii}e_i\approx -\sum_{j\in N_i} a_{ij}e_j.
+\end{equation*}
+
+将$N_i$展开成三类，得
+\begin{equation}
+  a_{ii}e_i\approx -\sum_{j\in C_i} a_{ij}e_j -\sum_{j\in D^s_i} a_{ij}e_j -\sum_{j\in D^w_i} a_{ij}e_j.
+\end{equation}
+
+对于$j\in D^w_i$，将$e_j$近似为$e_i$，得
+\begin{equation}
+  \left(a_{ii}+\sum_{j\in D^w_i} a_{ij}\right)e_i\approx -\sum_{j\in C_i} a_{ij}e_j -\sum_{j\in D^s_i} a_{ij}e_j.
+\end{equation}
+
+对于$e_j\in D_i^s$，将其近似为
+\begin{equation}
+  e_j\approx \frac{\sum_{k\in C_i} a_{jk}e_k}{\sum_{k\in C_i} a_{jk}}.
+\end{equation}
+
+将(6.5)代入(6.4)，得
+\begin{equation}
+  \omega_{ij}=-\frac{a_{ij}+\sum\limits_{m\in D_i^s}\left(\frac{a_{im}a_{mj}}{\sum\limits_{k\in C_i} a_{mk}}\right)}{a_{ii}+\sum\limits_{n\in D_i^w} a_{in}}
+\end{equation}
+
+本小节内容均来源于William L. Briggs的书，我们实现了上述过程，同时对反复使用的求和进行了预处理优化，能在$O(N_i)$的时间里完成单个$\omega_{ij}$的计算。
+
+\subsection{构建限制算子与粗网格矩阵$A^{2h}$}
+
+事实上，有了插值算子，我们可以直接由对称性和Garlerkin条件构建$I_{h}^{2h}$与$A^{2h}$，如下：
+\begin{equation}
+  I_{h}^{2h}:=(I_{2h}^{h})^T
+\end{equation}
+\begin{equation}
+  A^{2h}:=I_{h}^{2h}A^hI_{2h}^{h}
+\end{equation}
+
+\subsection{V-Cycle}
+
+实际上，代数多重网格的V-Cycle与几何多重网格基本一致，只不过使用的$A^h,I_h^{2h},I_{2h}^h$都是事先构建好的。为方便表述，记\verb|Rh|为$I_{h}^{2h}$，\verb|Ph|为$I_{2h}^{h}$，下面以递归形式描述。
+
+\begin{lstlisting}
+    VC(h, x, f)
+        if size of grid <= 16
+            return direct_solve(Ah, f)
+        pre-smoothing for v1 times
+        e = VC(2h, zeros, Rh*(f-Ah*x))
+        x = x + Ph * e
+        post-smoothing for v2 times
+        return x
+\end{lstlisting}
+
+有了V-Cycle，自然可以定义FMG-Cycle.
+
+\chapter{对流扩散方程的四阶MOL方法}
+
+\section{设计要点}
+
+\section{测试用例一}
+
+\section{测试用例二}
+
+\chapter{INSE的四阶近似投影方法}
+
+\section{设计要点}
+
+\section{测试用例三}
+
+\chapter{总结}
+
+\end{document}
