@@ -251,7 +251,7 @@ void INSE_Solver::solve(){
 
     for(double t = 0.0; t+1e-12 < tEnd; t += dT){
         // multi stage
-        int cl = clock();
+        auto cl = clock();
         std::cout << "Time: " << t << ". ";
         for(int d = 0; d < 2; d++){
             tmpsol[0][d] = sol_u[d];
