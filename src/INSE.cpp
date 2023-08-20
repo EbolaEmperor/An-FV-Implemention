@@ -245,7 +245,7 @@ void INSE_Solver::solve(){
             matrixElements.push_back( Triple(r, idx(i,j-2), con3) );
         }
     }
-    solver.setStrongThereshold(std::min(0.05, 5*nu));
+    solver.setStrongThereshold(std::min(0.2, 5*nu));
     solver.generateGrid(SparseMatrix(M*M, M*M, matrixElements));
     matrixElements.clear();
 
