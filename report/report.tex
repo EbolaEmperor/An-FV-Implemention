@@ -1,4 +1,4 @@
-\documentclass[lang=cn,10pt]{elegantbook}
+\documentclass[lang=cn,10pt,bibend=bibtex]{elegantbook}
 
 \title{Project: 四阶有限体积方法}
 
@@ -8,7 +8,7 @@
 \setcounter{tocdepth}{3}
 
 \logo{logo-blue.jpg}
-\cover{cover.jpeg}
+\cover{cover.jpg}
 \usepackage{multirow}
 \usepackage{xpatch}
 \makeatletter
@@ -58,13 +58,131 @@
   shading interp;
 \end{lstlisting}
 
-对于第二个测试用例，运行与绘图方法与第一个测试用例完全相同，将\verb|test1|改为\verb|test2|即可。
+对于第二个测试用例，运行与绘图方法与第一个测试用例完全相同，将\verb|test1|改为\verb|test2|即可。但是程序将不会输出误差，需要用matlab读取解并用Richardson外插法计算误差。
 
 \subsection{测试用例三}
 
+对于第三个测试用例，请使用以下命令运行测试：
+\begin{lstlisting}
+  time ./test3 M Re Cr eps
+\end{lstlisting}
+
+其中\verb|M|表示将区域划分为$M\times M$的网格；\verb|Re|（正整数）表示雷诺数；\verb|Cr|（正实数）表示柯朗数；\verb|eps|（正实数）表示多重网格的迭代精度。注意，\verb|eps|并不是越小越好，过小会导致求解速度很慢但解的质量几乎没有提升。
+
+程序将会输出误差、求解时间，并将求解结果输出到\verb|result.txt|。用matlab读取时，请使用以下脚本：
+\begin{lstlisting}
+  sol = load("result.txt");
+  ux = reshape(sol(1,:),M,M);
+  uy = reshape(sol(2,:),M,M);
+  p = reshape(sol(3,:),M,M);
+\end{lstlisting}
+
 \subsection{对流扩散方程求解器接口}
 
+以测试用例一为例，求解器的调用如下。
+
+\begin{lstlisting}
+  // 新建求解器
+  FV_MOL_Solver solver;
+  // 设置网格大小
+  solver.setGridSize(stoi(argv[1]));
+  // 设置终止时间
+  solver.setEndTime(1.0);
+  // 设置扩散系数
+  solver.setNu(nu);
+  // 设置时间步长，三个参数依次为：柯朗数、ux最大值、uy最大值
+  solver.setTimeStepWithCaurant(1.0, 1.0, 0.5);
+  // 设置外力项
+  solver.setForcingTerm(&f);
+  // 设置初值条件
+  solver.setInitial(&phi);
+  // 设置边值条件
+  solver.setBondary("down", &phi, "Dirichlet");
+  solver.setBondary("left", &phi, "Dirichlet");
+  solver.setBondary("up", &dyphi, "Neumann");
+  solver.setBondary("right", &dxphi, "Neumann");
+  // 设置速度，当速度场为常向量时，用setConstVelocity能显著提速
+  solver.setConstVelocity(1.0, 0.5);
+  // 求解
+  solver.solve();
+  // 将解输出到文件
+  solver.output("result.txt");
+  // 计算误差。需要提供真解、范数，在norm.h中提供了p范数、无穷范数可供调用
+  cout << "Error in max-norm: " << solver.checkerr(&phi, Norm_inf()) << endl;
+  cout << "Error in 1-norm: " << solver.checkerr(&phi, Norm_p(1)) << endl;
+  cout << "Error in 2-norm: " << solver.checkerr(&phi, Norm_p(2)) << endl;
+\end{lstlisting}
+
+以测试用例二为例，求解器的调用如下。
+\begin{lstlisting}
+  FV_MOL_Solver solver;
+  solver.setGridSize(stoi(argv[1]));
+  solver.setEndTime(10.0);
+  solver.setNu(nu);
+  solver.setTimeStepWithCaurant(1.0, 0.1, 0.1);
+  solver.setInitial(&initphi);
+  // 设置外力项为0
+  solver.setNoForcingTerm();
+  // 设置边值条件为周期
+  solver.setPeriodicBondary();
+  // 设置速度场（非常值）
+  solver.setVelocity(&ux, &uy);
+  solver.solve();
+  solver.output("result.txt");
+\end{lstlisting}
+
+初值条件、边值条件、外力项使用的函数均为\verb|TimeFunction2D|的派生类，其原型的一部分如下
+\begin{lstlisting}
+class TimeFunction2D{
+public:
+    virtual double at (const double &x, const double &y, const double &t) const = 0;
+    virtual double intFixX(const double &x, const double &d, const double &u, const double &t) const;
+    virtual double intFixY(const double &y, const double &d, const double &u, const double &t) const;
+    virtual double int2D(const double &l, const double &r, const double &d, const double &u, const double &t) const;
+    virtual double accInt2D(const double &l, const double &r, const double &d, const double &u, const double &t) const;
+    virtual double int2D_order6(const double &l, const double &r, const double &d, const double &u, const double &t) const;
+    virtual double accInt2D_order6(const double &l, const double &r, const double &d, const double &u, const double &t) const;
+};
+\end{lstlisting}
+
+用户的自定义函数必须继承\verb|TimeFunction2D|，并实现函数\verb|at(x,y,t)|，其返回值为用户自定义函数在$(x,y,t)$处的点值。若用户知道函数积分的解析表达式，也可以在子类中覆盖\verb|intFixX|（固定$x$对$y$积分）和\verb|intFixY|（固定$y$对$x$积分）。此外，若用户知道二重积分的解析表达式，建议用户将\verb|int2D|、\verb|accInt2D|、\verb|int2D_order6|、\verb|accInt2D_order6|全部覆盖。例如，测试用例二的$u_x$应该定义为：
+\begin{lstlisting}
+  class FUNCUX : public TimeFunction2D{
+    public:
+        double at (const double &x, const double &y, const double &t) const{
+            return 0.1 * sin(pi*x) * sin(pi*x) * sin(2*pi*y);
+        }
+        double intFixX(const double &x, const double &d, const double &u, const double &t) const{
+            return 0.1 * sin(pi*x) * sin(pi*x) * (cos(2*pi*d) - cos(2*pi*u)) / (2*pi);
+        }
+        double intFixY(const double &y, const double &d, const double &u, const double &t) const{
+            return 0.1 * sin(2*pi*y) * (2*pi*(u-d) + sin(2*pi*d) - sin(2*pi*u)) / (4*pi);
+        }
+    } ux;
+\end{lstlisting}
+
 \subsection{INSE求解器接口}
+
+INSE求解器的调用与对流扩散方程求解器类似。以测试用例三为例，INSE求解器的调用如下，我们在不同之处添加了注释。
+\begin{lstlisting}
+  INSE_Solver solver;
+  solver.setGridSize(stoi(argv[1]));
+  solver.setEndTime(0.5);
+  solver.setNu(nu);
+  solver.setTimeStepWithCaurant(stod(argv[3]), 3.0, 3.0);
+  solver.setNoForcingTerm();
+  // 设置初值（u为包含两个元素的TimeFunction2D指针数组）
+  solver.setInitial(u);
+  // 设置多重网格的迭代精度，若不设，则默认为1e-9
+  solver.setEps(stod(argv[4]));
+  solver.solve();
+  solver.output("result.txt");
+  // 计算误差，需要提供速度场真解（包含两个元素的TimeFunction2D指针数组）、压强真解（TimeFunction2D指针）、范数。checkerr的返回值为一个数组，包含3个元素，分别为ux、uy、p的数值解误差
+  auto err = solver.checkerr(u, p, Norm_inf());
+  cout << "Error in max-norm:\t" << err[0] << "\t" << err[1] << "\t" << err[2] << endl;
+\end{lstlisting}
+
+注意，我们的求解器只支持周期边界条件，因此不提供设置边界条件的接口。
 
 \newpage
 
@@ -72,17 +190,93 @@
 
 \section{辛普森法则}
 
-\section{6阶Newton-Cote法则}
+本文中的辛普森法则均指辛普森1/3法则，它是Newton-Cotes公式在$n=2$时的情形。辛普森法则用于估计如下形式的一维闭区间积分：
+\begin{equation*}
+  \int_a^b f(x) \;\text{d}x.
+\end{equation*}
+
+其估计如下：
+\begin{equation*}
+  I^S(f;a,b) = \frac{b-a}{6}\left(f(a)+4f\left(\frac{a+b}{2}\right)+f(b)\right).
+\end{equation*}
+
+对于辛普森法则的误差估计，我们有：
+\begin{equation*}
+  \left|I^S(f;a,b)-\int_a^b f(x) \;\text{d}x\right|\leq \frac{(b-a)^5}{2880}M,
+\end{equation*}
+
+其中$M$为$|f^{(4)}(x)|$的最大值。
+
+\section{Boole法则}
+
+Boole法则是Newton-Cotes公式在$n=4$时的情形。Boole法则对一维闭区间积分估计如下：
+\begin{equation*}
+  I^B(f;a,b) = \frac{b-a}{90}\left(7f(a)+32f\left(\frac{3a+b}{4}\right)+12f\left(\frac{a+b}{2}\right)+32f\left(\frac{a+3b}{4}\right)+7f(b)\right).
+\end{equation*}
+
+对于Boole法则的误差估计，我们有：
+\begin{equation*}
+  \left|I^B(f;a,b)-\int_a^b f(x) \;\text{d}x\right|\leq \frac{(b-a)^7}{945\times 2^{11}}M,
+\end{equation*}
+
+其中$M$为$|f^{(6)}(x)|$的最大值。
+
+\section{二重积分}
+
+对于二重积分
+\begin{equation*}
+  \int_a^b\int_c^d f(x,y) \;\text{d}y\;\text{d}x,
+\end{equation*}
+
+可以应用一维闭区间积分公式两次，得到对应的二重积分公式。例如，应用辛普森法则，我们有：
+\begin{align*}
+  I^{S,2D}(f;a,b,c,d)&= \left[\left(f(a,c)+4f\left(\frac{a+b}{2},c\right)+f(b,c)\right)\right.\\
+  &+ 4\left(f\left(a,\frac{c+d}{2}\right)+4f\left(\frac{a+b}{2},\frac{c+d}{2}\right)+f\left(b,\frac{c+d}{2}\right)\right)\\
+  &+ \left.\left(f(a,d)+4f\left(\frac{a+b}{2},d\right)+f(b,d)\right)\right] \times \frac{(b-a)(d-c)}{36}
+\end{align*}
+
+而误差估计可以为
+\begin{equation*}
+  \left|I^{S,2D}(f;a,b,c,d)-\int_a^b\int_c^d f(x,y) \;\text{d}y\;\text{d}x\right| = O((b-a)^5),
+\end{equation*}
+
+或
+\begin{equation*}
+  \left|I^{S,2D}(f;a,b,c,d)-\int_a^b\int_c^d f(x,y) \;\text{d}y\;\text{d}x\right| = O((d-c)^5),
+\end{equation*}
+
+对于Boole法则，有类似的结果。
 
 \section{自适应积分}
 
+我们希望把积分计算得更加精确，最好将误差控制在预先给定的$\varepsilon$以内。例如，在二维区域中，用某种法则计算积分值，记为$A$；然后将区域四等分，用同样的法则分别计算4个等分区域的积分值，记作$A_1,...,A_4$，然后计算误差：
+\begin{equation*}
+  E=|A-\sum_{i=1}^4 A_i|.
+\end{equation*}
+
+若$E<\varepsilon$，则将$\sum_{i=1}^4 A_i$作为结果返回，否则递归计算四个子区域。
+
+\section{应用场景}
+
+计算初值、真解的积分值时，我们将使用用自适应积分方法，将误差控制在$10^{-14}$以内。
+
+考虑到在求解过程中计算面积分、体积分时应用自适应方法代价过大，因此求解过程中，遇到要算积分，我们将直接使用积分公式。对于一维平均积分，使用辛普森法则，有误差估计：
+\begin{equation*}
+  \frac{1}{h}\int_i^{i+h} g(x) \;\text{d}x=\frac{1}{h}I^S(g;i,i+h)+O(h^4).
+\end{equation*}
+
+对于二维平均积分，辛普森公式的阶数不够，因此采用Boole法则导出的二重积分公式，有误差估计：
+\begin{equation*}
+  \frac{1}{h^2}\int_i^{i+h}\int_j^{j+h} f(x,y) \;\text{d}y\;\text{d}x=\frac{1}{h^2}I^{B,2D}(f;i,i+h,j,j+h)+O(h^5).
+\end{equation*}
+
+\vspace{6em}
+
 \chapter{代数多重网格}
 
-为节省工作量，本文所有求解器的解方程部分均采用代数多重网格。经测试，选取恰当的强依赖阈值，可以使代数多重网格的性能与几何多重网格相当，甚至超越几何多重网格\footnote{这项比较基于我的结果（代数多重网格）、樊睿的结果（几何多重网格）、凌子恒的结果（几何多重网格）。}。本章的内容来源于我在微分方程数值解课程中的多重网格大作业。
+为节省工作量，本文所有求解器的解方程部分均采用代数多重网格。经测试，选取恰当的强依赖阈值，可以使代数多重网格的性能与几何多重网格相当，甚至超越几何多重网格\footnote{这项比较基于我的结果（代数多重网格）、樊睿的结果（几何多重网格）、凌子恒的结果（几何多重网格）。}。本章的内容来源于我在微分方程数值解课程中的多重网格大作业，并额外添加了3.6节。
 
-\section{算法描述}
-
-\subsection{背景与介绍}
+\section{背景与介绍}
 
 代数多重网格（AMG）是几何多重网格的一个自然推广，当我们发现由偏微分方程引出的离散方程组，使用多重网格具有如此优秀的表现时，自然会想，能不能将其推广到更一般的方程组，解更一般的大型稀疏矩阵。
 
@@ -92,7 +286,7 @@
 
 要想应用多重网格的思路，我们必须将方程限制到粗网格中，求解后返回细网格调整。但此时我们面临着严峻的问题：我们不知道网格的结构，只知道一个矩阵。我们需要一些算法来选取粗网格点$\Omega^{2h}$，并且定义限制算子$I_{h}^{2h}$与插值算子$I_{2h}^{h}$，还要给出粗网格上的矩阵$A^{2h}$。
 
-\subsection{选取粗网格点}
+\section{选取粗网格点}
 
 要想从中选取粗网格点，首先给出如下定义：
 
@@ -126,7 +320,7 @@
 
 注意到上述过程需要维护一个$\lambda_i$数组，支持增加、删除、求最大下标三种操作，我们期望单次操作的复杂度不超过$O(\log n)$，因此我们实现了一个\textbf{二叉搜索树}。当然，使用线段树、平衡树也是可以的，不过因为可以提前建树，所以平衡操作是不必要的。
 
-\subsection{构建插值算子}
+\section{构建插值算子}
 
 对于$\mathbf{e}\in\Omega^{2h}$，插值算子具有如下格式：
 \begin{equation}
@@ -165,7 +359,7 @@
 
 本小节内容均来源于William L. Briggs的书，我们实现了上述过程，同时对反复使用的求和进行了预处理优化，能在$O(N_i)$的时间里完成单个$\omega_{ij}$的计算。
 
-\subsection{构建限制算子与粗网格矩阵$A^{2h}$}
+\section{构建限制算子与粗网格矩阵$A^{2h}$}
 
 事实上，有了插值算子，我们可以直接由对称性和Garlerkin条件构建$I_{h}^{2h}$与$A^{2h}$，如下：
 \begin{equation}
@@ -175,7 +369,7 @@
   A^{2h}:=I_{h}^{2h}A^hI_{2h}^{h}
 \end{equation}
 
-\subsection{V-Cycle}
+\section{V-Cycle}
 
 实际上，代数多重网格的V-Cycle与几何多重网格基本一致，只不过使用的$A^h,I_h^{2h},I_{2h}^h$都是事先构建好的。为方便表述，记\verb|Rh|为$I_{h}^{2h}$，\verb|Ph|为$I_{2h}^{h}$，下面以递归形式描述。
 
@@ -192,6 +386,20 @@
 
 有了V-Cycle，自然可以定义FMG-Cycle.
 
+\section{纯Neumann条件或周期条件下的求解}
+
+对于纯Neumann条件或周期条件下的二维Poisson方程，我们知道，在解存在的前提下，任何两个解都相差一个常数。此时直接使用多重网格求解也是可以的，但是解会发生“漂移”，即平均值越来越大。这对数值方法很不友好，实际测试时，一个$512\times 512$的二维网格所需的FMG迭代次数可以高达$30$次。为此，我们人为添加“平均值为$0$”的额外条件，并定义下面这个操作为\textbf{“均值标准化”}。
+
+\begin{equation*}
+  \mathbf{v}\gets \mathbf{v}-\left(\frac{1}{n}\sum_{i=1}^n v_i\right)\mathbf{e}.
+\end{equation*}
+
+我们在第一层网格中，每进行完一次smoothing都对当前解执行一次均值标准化，实测效果极佳，可以将FMG迭代次数降低到5次以内。这个做法可以在文献\cite{Multigrid}的第113页找到。
+
+\textbf{在INSE的近似投影算子中，我们将会用到本节的做法}。
+
+\newpage
+
 \chapter{对流扩散方程的四阶MOL方法}
 
 \section{设计要点}
@@ -207,5 +415,7 @@
 \section{测试用例三}
 
 \chapter{总结}
+
+\printbibliography[heading=bibintoc,title=\ebibname]
 
 \end{document}
