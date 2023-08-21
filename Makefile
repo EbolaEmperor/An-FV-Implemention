@@ -1,5 +1,10 @@
 all: test1 test2 test3
 
+story:
+	cd report/src && make
+	mv report/src/report.pdf report.pdf
+	cd report/src && make clean
+
 FV_MOL.o: include/FV_MOL.h src/FV_MOL.cpp include/idpair.h include/RKTable.h
 	g++ -c src/FV_MOL.cpp -Iinclude -O2 -O3 -Ofast
 
