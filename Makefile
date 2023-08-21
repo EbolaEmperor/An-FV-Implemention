@@ -24,26 +24,23 @@ norm.o: include/norm.h src/norm.cpp
 TimeFunction2D.o: include/TimeFunction2D.h src/TimeFunction2D.cpp
 	g++ -c src/TimeFunction2D.cpp -Iinclude -O2 -O3 -Ofast
 
-test1.o: test1.cpp
-	g++ -c test1.cpp -Iinclude -O2 -O3 -Ofast
+test1.o: tests/test1.cpp
+	g++ -c tests/test1.cpp -Iinclude -O2 -O3 -Ofast
 
 test1: test1.o FV_MOL.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o
 	g++ test1.o FV_MOL.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o -o test1 -O2 -O3 -Ofast
 
-test2.o: test2.cpp
-	g++ -c test2.cpp -Iinclude -O2 -O3 -Ofast
+test2.o: tests/test2.cpp
+	g++ -c tests/test2.cpp -Iinclude -O2 -O3 -Ofast
 
 test2: test2.o FV_MOL.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o
 	g++ test2.o FV_MOL.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o -o test2 -O2 -O3 -Ofast
 
-test3.o: test3.cpp
-	g++ -c test3.cpp -Iinclude -O2 -O3 -Ofast
+test3.o: tests/test3.cpp
+	g++ -c tests/test3.cpp -Iinclude -O2 -O3 -Ofast
 
 test3: test3.o INSE.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o
 	g++ test3.o INSE.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o -o test3 -O2 -O3 -Ofast
-
-test4: test3.o INSE.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o
-	g++ test3.o INSE.o amgSolver.o avl.o matrix.o sparseMatrix.o norm.o TimeFunction2D.o -o test4 -O2 -O3 -Ofast
 
 clean:
 	rm *.o test1 test2 test3
